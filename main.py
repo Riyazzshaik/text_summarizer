@@ -54,7 +54,7 @@ except Exception as e:
     logger.exception(e)
     raise e
 
-STAGE_NAME =  "model evalutionr Stage"
+STAGE_NAME =  "model evaluation Stage"
 
 try:
     logger.info(f">>>>>> Stage {STAGE_NAME} started  <<<<<")

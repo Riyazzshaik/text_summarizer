@@ -1,8 +1,15 @@
+import os
+import pandas as pd
 import torch
+
 from tqdm import tqdm
 from datasets import load_from_disk
 import evaluate
-from transformers import AutoTokenizer, AutoModelForSeq2SeqLM
+
+from transformers import (
+    AutoTokenizer,
+    AutoModelForSeq2SeqLM
+)
 
 from textSummarizer.entity import ModelEvaluationConfig
 
@@ -13,10 +20,14 @@ class ModelEvaluation:
         self.config = config
 
 
-    def generate_batch_sized_chunks(self, list_of_elements, batch_size):
+    def generate_batch_sized_chunks(
+        self,
+        list_of_elements,
+        batch_size
+    ):
 
         for i in range(0, len(list_of_elements), batch_size):
-            yield list_of_elements[i : i + batch_size]
+            yield list_of_elements[i: i + batch_size]
 
 
     def calculate_metric_on_test_ds(
@@ -58,9 +69,14 @@ class ModelEvaluation:
                 return_tensors="pt"
             )
 
+            inputs = {
+                key: value.to(device)
+                for key, value in inputs.items()
+            }
+
             summaries = model.generate(
-                input_ids=inputs["input_ids"].to(device),
-                attention_mask=inputs["attention_mask"].to(device),
+                input_ids=inputs["input_ids"],
+                attention_mask=inputs["attention_mask"],
                 length_penalty=0.8,
                 num_beams=4,
                 max_length=64
@@ -68,11 +84,11 @@ class ModelEvaluation:
 
             decoded_summaries = [
                 tokenizer.decode(
-                    s,
+                    summary,
                     skip_special_tokens=True,
                     clean_up_tokenization_spaces=True
                 )
-                for s in summaries
+                for summary in summaries
             ]
 
             metric.add_batch(
@@ -89,7 +105,7 @@ class ModelEvaluation:
 
         device = "cuda" if torch.cuda.is_available() else "cpu"
 
-        print(f"Using device: {device}")
+        print(f"\nUsing device: {device}")
 
         tokenizer = AutoTokenizer.from_pretrained(
             self.config.tokenizer_path
@@ -103,10 +119,15 @@ class ModelEvaluation:
             self.config.data_path
         )
 
+        print("\nDataset loaded successfully")
+
         rouge_metric = evaluate.load("rouge")
 
+        # SMALL DATASET FOR FAST EVALUATION
+        small_test_data = dataset_samsum_pt["test"].select(range(20))
+
         score = self.calculate_metric_on_test_ds(
-            dataset=dataset_samsum_pt["test"].select(range(20)),
+            dataset=small_test_data,
             metric=rouge_metric,
             model=model,
             tokenizer=tokenizer,
@@ -116,3 +137,21 @@ class ModelEvaluation:
 
         print("\nROUGE SCORE:\n")
         print(score)
+
+        # CREATE DIRECTORY
+        os.makedirs(
+            os.path.dirname(self.config.metric_file_name),
+            exist_ok=True
+        )
+
+        # SAVE METRICS CSV
+        df = pd.DataFrame([score])
+
+        df.to_csv(
+            self.config.metric_file_name,
+            index=False
+        )
+
+        print(
+            f"\nMetrics saved at: {self.config.metric_file_name}"
+        )
